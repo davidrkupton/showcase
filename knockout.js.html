@@ -1,0 +1,237 @@
+<!-- David Upton -->
+<!-- davidrkupton@gmail.com -->
+<!DOCTYPE html>
+<head>
+<base href="http://learn.knockoutjs.com/" />
+    <script type="text/javascript" src="http://ajax.googleapis.com/ajax/libs/jquery/1.7.1/jquery.min.js"></script>
+    <script type='text/javascript' src='/Scripts/Lib/knockout-3.0.0.js'></script>
+    <script type='text/javascript' src='http://netdna.bootstrapcdn.com/bootstrap/3.3.7/js/bootstrap.min.js'></script>
+    <link rel="stylesheet" href="http://netdna.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css">
+    <style>
+        h2,h3{margin-left:20px;}
+        #data-header{font-weight:bold;}
+        .month{display:inline-block; min-width:35px; max-width:35px;}
+        .year,
+        .total{display:inline-block; min-width:60px; max-width:60px;}
+        .total{text-align: right}
+        li{list-style-type: none}
+        a.clickable{font-size:smaller}
+    </style>
+</head>
+<html>
+<body>
+    <h2>Knockout/jQuery/Bootstrap Database Example</h2>
+    <ul>
+        <li id="data-header">
+            <span class="year">Year</span>
+            <span class="month-wrapper" data-bind="foreach: months()">
+                <span class="month" data-bind="text: $data"></span>
+            </span>
+            <span class="total">Total</span>
+        </li>
+    </ul>
+    <ul data-bind="foreach: pivot">
+        <li id="data-body">
+            <input class="year" data-bind="value: year" />
+            <span class="month-wrapper" data-bind="foreach: values">
+                <input class="month" data-bind="value: value" />
+            </span>
+            <span class="total" data-bind="text: total"></span>
+            <span><a href="#" class="clickable edit" data-bind="click: $root.editRow, rowEnabled: false">Edit</a></span>
+            <span><a href="#" class="clickable remove" data-bind="click: $root.removeYear">Remove</a></span>
+        </li>
+    </ul>
+    <ul>
+    <li>
+        <button class="btn btn-primary" data-bind="click: addYear">Add New Year</button>
+        <button class="btn btn-warning" data-bind="click: exportAll">Export Data</button>
+    </li>
+    </ul>
+
+    <div id="exported-data"  data-bind="fadeVisible: 0">
+        <h3>Exported Raw Data</h3>
+        <ul data-bind="foreach: exportData()">
+            <li data-bind="text: ko.toJSON($data)"></li>
+        </ul>
+    </div>
+
+</body>
+
+<script type='text/javascript'>
+
+    // data defined as fake database json returns
+    var serverData = [
+        {Year: 2012, Month: 1, Value: .5},
+        {Year: 2012, Month: 2, Value: .5},
+        {Year: 2012, Month: 3, Value: .75},
+        {Year: 2012, Month: 4, Value: .75},
+        {Year: 2012, Month: 5, Value: .5},
+        {Year: 2012, Month: 6, Value: .5},
+        {Year: 2012, Month: 7, Value: .75},
+        {Year: 2012, Month: 8, Value: .75},
+        {Year: 2012, Month: 9, Value: .5},
+        {Year: 2012, Month: 10, Value: .5},
+        {Year: 2012, Month: 11, Value: .75},
+        {Year: 2012, Month: 12, Value: .75},
+
+        {Year: 2013, Month: 1, Value: .5},
+        {Year: 2013, Month: 2, Value: .5},
+        {Year: 2013, Month: 3, Value: .75},
+        {Year: 2013, Month: 4, Value: .75},
+        {Year: 2013, Month: 5, Value: .5},
+        {Year: 2013, Month: 6, Value: .5},
+        {Year: 2013, Month: 7, Value: .75},
+        {Year: 2013, Month: 8, Value: .75},
+        {Year: 2013, Month: 9, Value: .5},
+        {Year: 2013, Month: 10, Value: .5},
+        {Year: 2013, Month: 11, Value: .75},
+        {Year: 2013, Month: 12, Value: .75},
+
+        {Year: 2014, Month: 1, Value: .85}
+    ];
+    var monthMap = {
+        "en-US": ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
+    };
+
+    /**
+     * Bindings to initialize the UI
+     */
+    ko.bindingHandlers.fadeVisible = {
+        init: function(element, valueAccessor) {
+            var shouldDisplay = valueAccessor();
+            $(element).toggle(shouldDisplay);
+        }
+    };
+    ko.bindingHandlers.rowEnabled = {
+        init: function(element, valueAccessor) {
+            var shouldDisplay = valueAccessor();
+            $(element).parents('li').find('input').attr('disabled', (!shouldDisplay));
+        },
+    };
+
+    /**
+     * Data struct for use in UI
+     */
+    function yearData(year, values){
+        var self = this;
+        self.year = ko.observable(year);
+        self.values = ko.observableArray([]);
+        $(values).each(function(key, val) {
+            self.values.push(new yearDataValues(val))
+        });
+        self.total = ko.computed(function(){
+            var total = 0;
+            $(self.values()).each(function(a, b){
+                total = parseFloat(total) + parseFloat(b.value());
+            });
+            return parseFloat(total).toFixed(2);
+        });
+    }
+    function yearDataValues(value){
+        var self = this;
+        self.value = ko.observable(value);
+    }
+
+    /**
+     * Data struct to map the original dataset
+     */
+    function rawDataModel(year, month, value){
+        var self = this;
+        self.Year = parseInt(year);
+        self.Month = parseInt(month);
+        self.Value = parseFloat(value,1).toFixed(2);
+    }
+
+    function vm() {
+        var self = this;
+
+        /**
+         * Get the browsers language, so we can give translated months
+         */
+        var language = navigator.languages && navigator.languages[0] || // Chrome / Firefox
+            navigator.language ||   // All browsers
+            navigator.userLanguage; // IE <= 10
+
+        /**
+         * Creates an object wit a modified structure for the UI
+         */
+        self.pivot = ko.observableArray([]);
+        self.makePivot = function(){
+            var yr = serverData[0].Year;
+            self.pivot = ko.observableArray([]);
+            var num = self.pivot.push(new yearData(yr, []));
+            for (var i = 0; i < serverData.length; i++) {
+                if (yr != serverData[i].Year) {
+                    yr = serverData[i].Year;
+                    num = self.pivot.push(new yearData(yr, []));
+                }
+                self.pivot()[num-1].values.push(new yearDataValues(serverData[i].Value));
+            }
+            for (var j=i%12; j<12; j++) {
+                self.pivot()[num-1].values.push(new yearDataValues(0));
+            }
+        };
+        self.makePivot();
+
+        /**
+         * Creates an object in the same style as the original data from JSON
+         */
+        self.exports = ko.observableArray([]);
+        self.exportData = ko.computed(function(){
+            var obj = ko.toJS(self);
+            self.exports=[];
+            for (var i = 0; i < obj.pivot.length; i++) {
+                if (typeof obj.pivot[i] === "undefined") continue;
+                for (var j = 0; j < obj.pivot[i].values.length; j++){
+                    var val = obj.pivot[i].values[j].value;
+                    if (!(!isNaN(parseFloat(val)) && isFinite(val))) continue;
+                    self.exports.push(new rawDataModel(obj.pivot[i].year, (j+1), val));
+                }
+            }
+            return self.exports;
+        });
+
+        /**
+         * Provides a basic mapping for month names
+         */
+        self.months = function() {
+            if (typeof language === "undefined") language ="en-US";
+            return monthMap[language];
+        };
+
+        /**
+         *  Removes an entire year from the database
+         */
+        self.removeYear = function(year){
+            self.pivot.remove(year);
+        };
+
+        /**
+         * Displays the data-export area
+         */
+        self.exportAll = function(){
+            $("#exported-data").fadeIn();
+        };
+
+        /**
+         * Adds a new record - with default values
+         */
+        self.addYear = function(){
+            self.pivot.push(new yearData(new Date().getFullYear(), new Array(12).fill(0.08)));
+        };
+
+        /**
+         * Makes a data row editable.
+         */
+        self.editRow = function(data, event){
+            $(event.target).parents('li').find('input').attr('disabled', false);
+        };
+
+    };
+
+    // bind the view model
+    ko.applyBindings(new vm());
+
+</script>
+</body>
+</html>
