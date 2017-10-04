@@ -1,14 +1,36 @@
 <!-- David Upton -->
 <!-- davidrkupton@gmail.com -->
+<!--
+    This script showcases using knockout to import data from a json file (e.g. could be returned from
+    a REST request) and format in a UI.
+    The UI allows the user to add, edit and delete the data in the browser.
+    Chnages dynamically update a row-total.
+    A button is provided to preview what would be exported (knockouts dynamic referencing is showcased as
+    the export data changes when the user changes it in the UI).
+    Finally an upload button is provided which emulates an ajax call to a REST service to upadte the databse.
+    ** NOTES:
+        - REST scripts assumed but not provided - this will need to be aware that the data has been detached
+        - Minimal validation is provided
+        - localisation is framed but not fully implemented
+
+    Languages and frameworks used:
+        - javascript
+        - HTML
+        - CSS3 (animated spinner)
+        - knockout JS
+        - jQuery
+        - bootstrap
+-->
+
 <!DOCTYPE html>
 <head>
 <base href="http://learn.knockoutjs.com/" />
     <script type="text/javascript" src="http://ajax.googleapis.com/ajax/libs/jquery/1.7.1/jquery.min.js"></script>
-    <script type='text/javascript' src='/Scripts/Lib/knockout-3.0.0.js'></script>
+    <script type='text/javascript' src='https://cdnjs.cloudflare.com/ajax/libs/knockout/3.0.0/knockout-min.js'></script>
     <script type='text/javascript' src='http://netdna.bootstrapcdn.com/bootstrap/3.3.7/js/bootstrap.min.js'></script>
     <link rel="stylesheet" href="http://netdna.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css">
     <style>
-        h2,h3{margin-left:20px;}
+        .ins-1{margin-left:20px;}
         #data-header{font-weight:bold;}
         .month{display:inline-block; min-width:35px; max-width:35px;}
         .year,
@@ -16,11 +38,31 @@
         .total{text-align: right}
         li{list-style-type: none}
         a.clickable{font-size:smaller}
+        export-message{max-height:50px; max-width: 200px}
+
+        /* css3 spinner */
+        .loader,
+        .loader:before,
+        .loader:after {border-radius: 50%;width: 12px;height: 12px;-webkit-animation-fill-mode: both;animation-fill-mode: both;-webkit-animation: load7 1.8s infinite ease-in-out;animation: load7 1.8s infinite ease-in-out;  }
+        .loader {color: #337ab7;border-color: #2e6da4;font-size: 15px;position: relative;margin-top: -30px;margin-left: 40px;text-indent: -9999em;-webkit-transform: translateZ(0);-ms-transform: translateZ(0);transform: translateZ(0);-webkit-animation-delay: -0.16s;animation-delay: -0.16s;}
+        .loader:before,
+        .loader:after {content: '';position: absolute;top: 0;}
+        .loader:before {left: -15px;-webkit-animation-delay: -0.32s;animation-delay: -0.32s;}
+        .loader:after {left: 15px;}
+        @-webkit-keyframes load7 {
+            0%,80%,100% {box-shadow: 0 2.5em 0 -1.3em;}
+            40% {box-shadow: 0 2.5em 0 0;}
+        }
+        @keyframes load7 {
+            0%,80%,100% {box-shadow: 0 2.5em 0 -1.3em;}
+            40% {box-shadow: 0 2.5em 0 0;}
+        }
     </style>
 </head>
 <html>
 <body>
-    <h2>Knockout/jQuery/Bootstrap Database Example</h2>
+    <h2 class="ins-1">Knockout/jQuery/Bootstrap Database Example</h2>
+    <p class="ins-1">Basic manipulation of data sourced from a remote database.</p>
     <ul>
         <li id="data-header">
             <span class="year">Year</span>
@@ -43,15 +85,20 @@
     </ul>
     <ul>
     <li>
-        <button class="btn btn-primary" data-bind="click: addYear">Add New Year</button>
-        <button class="btn btn-warning" data-bind="click: exportAll">Export Data</button>
+        <button class="btn btn-primary" data-bind="click: addYear">Add New Row</button>
+        <button class="btn btn-warning" data-bind="click: viewExportAll">Preview Export Data</button>
     </li>
     </ul>
 
     <div id="exported-data"  data-bind="fadeVisible: 0">
-        <h3>Exported Raw Data</h3>
+        <h3 class="ins-1">Data to be Exported</h3>
+        <p class="ins-1">Data transposed and prepared for upload back to database.</p>
         <ul data-bind="foreach: exportData()">
             <li data-bind="text: ko.toJSON($data)"></li>
+        </ul>
+        <ul>
+            <li><button id="export" class="btn btn-success" data-bind="click: uploadAll">Export Data</button></li>
+            <li><p id="export-message"></p></li>
         </ul>
     </div>
 
@@ -73,7 +120,6 @@
         {Year: 2012, Month: 10, Value: .5},
         {Year: 2012, Month: 11, Value: .75},
         {Year: 2012, Month: 12, Value: .75},
-
         {Year: 2013, Month: 1, Value: .5},
         {Year: 2013, Month: 2, Value: .5},
         {Year: 2013, Month: 3, Value: .75},
@@ -86,7 +132,6 @@
         {Year: 2013, Month: 10, Value: .5},
         {Year: 2013, Month: 11, Value: .75},
         {Year: 2013, Month: 12, Value: .75},
-
         {Year: 2014, Month: 1, Value: .85}
     ];
     var monthMap = {
@@ -106,18 +151,18 @@
         init: function(element, valueAccessor) {
             var shouldDisplay = valueAccessor();
             $(element).parents('li').find('input').attr('disabled', (!shouldDisplay));
-        },
+        }
     };
 
     /**
      * Data struct for use in UI
      */
-    function yearData(year, values){
+    function YearData(year, values){
         var self = this;
         self.year = ko.observable(year);
         self.values = ko.observableArray([]);
         $(values).each(function(key, val) {
-            self.values.push(new yearDataValues(val))
+            self.values.push(new YearDataValues(val))
         });
         self.total = ko.computed(function(){
             var total = 0;
@@ -127,7 +172,7 @@
             return parseFloat(total).toFixed(2);
         });
     }
-    function yearDataValues(value){
+    function YearDataValues(value){
         var self = this;
         self.value = ko.observable(value);
     }
@@ -135,14 +180,14 @@
     /**
      * Data struct to map the original dataset
      */
-    function rawDataModel(year, month, value){
+    function RawDataModel(year, month, value){
         var self = this;
         self.Year = parseInt(year);
         self.Month = parseInt(month);
         self.Value = parseFloat(value,1).toFixed(2);
     }
 
-    function vm() {
+    function VM() {
         var self = this;
 
         /**
@@ -159,16 +204,16 @@
         self.makePivot = function(){
             var yr = serverData[0].Year;
             self.pivot = ko.observableArray([]);
-            var num = self.pivot.push(new yearData(yr, []));
+            var num = self.pivot.push(new YearData(yr, []));
             for (var i = 0; i < serverData.length; i++) {
                 if (yr != serverData[i].Year) {
                     yr = serverData[i].Year;
-                    num = self.pivot.push(new yearData(yr, []));
+                    num = self.pivot.push(new YearData(yr, []));
                 }
-                self.pivot()[num-1].values.push(new yearDataValues(serverData[i].Value));
+                self.pivot()[num-1].values.push(new YearDataValues(serverData[i].Value));
             }
             for (var j=i%12; j<12; j++) {
-                self.pivot()[num-1].values.push(new yearDataValues(0));
+                self.pivot()[num-1].values.push(new YearDataValues(0));
             }
         };
         self.makePivot();
@@ -185,7 +230,7 @@
                 for (var j = 0; j < obj.pivot[i].values.length; j++){
                     var val = obj.pivot[i].values[j].value;
                     if (!(!isNaN(parseFloat(val)) && isFinite(val))) continue;
-                    self.exports.push(new rawDataModel(obj.pivot[i].year, (j+1), val));
+                    self.exports.push(new RawDataModel(obj.pivot[i].year, (j+1), val));
                 }
             }
             return self.exports;
@@ -209,15 +254,28 @@
         /**
          * Displays the data-export area
          */
-        self.exportAll = function(){
+        self.viewExportAll = function(data, element){
             $("#exported-data").fadeIn();
+            $("#export").addClass("btn-primary").removeClass("btn-success").text('Upload to Database');
+        };
+
+        /**
+         * Mimicks data upload
+         */
+        self.uploadAll = function(data, element){
+            $("#export-message").text('').addClass('loader');
+            $(element.target).hide().removeClass("btn-primary");
+            setTimeout(function(){
+                $("#export-message").removeClass('loader');
+                $(element.target).addClass("btn-success").html('Data Uploaded').fadeIn();
+            }, 4000);
         };
 
         /**
          * Adds a new record - with default values
          */
         self.addYear = function(){
-            self.pivot.push(new yearData(new Date().getFullYear(), new Array(12).fill(0.08)));
+            self.pivot.push(new YearData(new Date().getFullYear(), new Array(12).fill(0.08)));
         };
 
         /**
@@ -227,10 +285,10 @@
             $(event.target).parents('li').find('input').attr('disabled', false);
         };
 
-    };
+    }
 
     // bind the view model
-    ko.applyBindings(new vm());
+    ko.applyBindings(new VM());
 
 </script>
 </body>
